@@ -1,0 +1,18 @@
+package example
+
+object Hello extends Greeting with App {
+  println(greeting)
+}
+
+trait Greeting {
+  lazy val greeting: String = "hello"
+}
+
+sealed trait Fault {
+  val code: Int
+  val message: String
+}
+
+object Tester {
+  type Box[T] = Either[Fault, T]
+}
