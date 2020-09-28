@@ -7,7 +7,7 @@ ThisBuild / organizationName := "example"
 
 lazy val root = (project in file("."))
   .settings(
-    name := "cycle",
+    name := "fp-workshop",
     libraryDependencies += scalaTest % Test
   )
 
