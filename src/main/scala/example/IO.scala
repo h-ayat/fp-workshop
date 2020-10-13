@@ -4,54 +4,36 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.util.Success
 
-trait IO[+F, +T] {
-
-  def exec(callback: Either[F, T] => Unit): Unit
-
-  def map[U](f: T => U): IO[F, U]
-
-  def flatMap[F2 >: F, U](f: T => IO[F2, U]): IO[F2, U]
-}
-
 object IO {
-  def fromFuture[T](f: Future[T])(implicit
-      ec: ExecutionContext
-  ): IO[Throwable, T] = new FutureIO(f)
 
-  def pure[T](t: => T): IO[Nothing, T] = new Simple(t)
-  def fail[F](f: => F): IO[F, Nothing] = new Fail(f)
-}
+  def simple[T](t: => T): IO[Nothing, T] = pure(Right(t))
 
-class FutureIO[T](future: => Future[T])(implicit ec: ExecutionContext)
-    extends IO[Throwable, T] {
-  override def exec(callback: Either[Throwable, T] => Unit): Unit =
-    future.onComplete(a => callback(a.toEither))
-
-  override def map[U](f: T => U): IO[Throwable, U] =
-    new FutureIO(future.map(f))
-
-  override def flatMap[F2 >: Throwable, U](f: T => IO[F2, U]): IO[F2, U] = {
-    ???
+  private def pure[F, T](f: => Either[F, T]): IO[F, T] = {
+    callback: Callback[F, T] =>
+      callback(f)
   }
 
-}
+  def fromFuture[T](f: Future[T])(implicit
+      ec: ExecutionContext
+  ): IO[Throwable, T] = { callback: Callback[Throwable, T] =>
+    f.onComplete { tr =>
+      callback(tr.toEither)
+    }
+  }
 
-class Simple[T](t: => T) extends IO[Nothing, T] {
-  override def exec(callback: Either[Nothing, T] => Unit): Unit =
-    callback(Right(t))
+  def map[F, T, U](io: IO[F, T])(f: T => U): IO[F, U] = {
+    callback: Callback[F, U] =>
+      io(e => callback(e.map(f)))
+  }
 
-  override def map[U](f: T => U): IO[Nothing, U] = new Simple(f(t))
+  val s = simple(12)
+  val s2 = map(s)(_ + 2)
 
-  override def flatMap[F2, U](f: T => IO[F2, U]): IO[F2, U] = f(t)
-}
+  def flatMap[F, T, F2 >: F, U](io: IO[F, T])(f: T => IO[F2, U]): IO[F2, U] = {
+    callback: Callback[F2, U] =>
+      io(_.fold(f => callback(Left(f)), t => f(t)(callback)))
+  }
 
-class Fail[F](f: => F) extends IO[F, Nothing] {
-  override def exec(callback: Either[F, Nothing] => Unit): Unit =
-    callback(Left(f))
-
-  override def map[U](f: Nothing => U): IO[F, U] = this
-
-  override def flatMap[F2 >: F, U](f: Nothing => IO[F2, U]): IO[F2, U] = this
 }
 
 object Test {
@@ -60,7 +42,7 @@ object Test {
   import scala.concurrent.ExecutionContext.Implicits.global
 
   val r = for {
-    v <- IO.pure(heavy(???))
+    v <- IO.simple(heavy(???))
     result <- IO.fromFuture(writeToDB(v))
   } yield {
     result
